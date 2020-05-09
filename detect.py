@@ -26,7 +26,7 @@ _CLASS_NAMES_FILE = './data/labels/coco.names'
 _MAX_OUTPUT_SIZE = 20
 
 
-def main(input_names=['/home/salozhor/Videos/CityLink.mp4'], iou_threshold=0.5, confidence_threshold=0.4):
+def main(input_names=['data/video/CityLink.mp4'], iou_threshold=0.5, confidence_threshold=0.4):
     point_list = [[], []]
     class_names = load_class_names(_CLASS_NAMES_FILE)
     n_classes = len(class_names)
