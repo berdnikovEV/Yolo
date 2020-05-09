@@ -26,7 +26,8 @@ _CLASS_NAMES_FILE = './data/labels/coco.names'
 _MAX_OUTPUT_SIZE = 20
 
 
-def main(input_names, iou_threshold = 0.5, confidence_threshold=0.5):
+def main(input_names=['/home/salozhor/Videos/CityLink.mp4'], iou_threshold=0.5, confidence_threshold=0.4):
+    point_list = [[], []]
     class_names = load_class_names(_CLASS_NAMES_FILE)
     n_classes = len(class_names)
 
@@ -37,9 +38,9 @@ def main(input_names, iou_threshold = 0.5, confidence_threshold=0.5):
 
     inputs = tf.placeholder(tf.float32, [1, *_MODEL_SIZE, 3])
     detections = model(inputs, training=False)
-    saver = tf.train.Saver(tf.global_variables(scope='yolo_v3_model'))
+    saver = tf.compat.v1.train.Saver(tf.compat.v1.global_variables(scope='yolo_v3_model'))
 
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
         saver.restore(sess, './weights/model.ckpt')
 
         win_name = 'Video detection'
@@ -47,10 +48,10 @@ def main(input_names, iou_threshold = 0.5, confidence_threshold=0.5):
         cap = cv2.VideoCapture(input_names[0])
         frame_size = (cap.get(cv2.CAP_PROP_FRAME_WIDTH),
                         cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fourcc = cv2.VideoWriter_fourcc(*'X264')
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
         fps = cap.get(cv2.CAP_PROP_FPS)
         out = cv2.VideoWriter('./detections/detections.mp4', fourcc, fps,
-                                (int(frame_size[0]), int(frame_size[1])))
+                              (int(frame_size[0]), int(frame_size[1])))
 
         try:
             while True:
@@ -63,17 +64,21 @@ def main(input_names, iou_threshold = 0.5, confidence_threshold=0.5):
                                             feed_dict={inputs: [resized_frame]})
 
                 draw_frame(frame, frame_size, detection_result,
-                            class_names, _MODEL_SIZE)
+                            class_names, _MODEL_SIZE, point_list)
 
                 cv2.imshow(win_name, frame)
-
                 key = cv2.waitKey(1) & 0xFF
 
                 if key == ord('q'):
                     break
 
                 out.write(frame)
+
+
+        except Exception as e:
+            print(e)
         finally:
+
             cv2.destroyAllWindows()
             cap.release()
             print('Detections have been saved successfully.')
@@ -82,6 +87,6 @@ def main(input_names, iou_threshold = 0.5, confidence_threshold=0.5):
 
 if __name__ == '__main__':
     if len(sys.argv)>1:
-        main(sys.argv[1:]) 
+        main(sys.argv[1:])
     else:
-        raise OSError("No video specified")
+        main()

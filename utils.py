@@ -4,6 +4,37 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from seaborn import color_palette
 import cv2
+from typing import List
+
+
+def get_dist(old_point, new_point):
+    return ((old_point[0] - new_point[0])**2 + (old_point[1] - new_point[1])**2)**0.5
+
+
+def add_new_point(point_list:List[List], new_point):
+    # point_list = [[old],[upd]]
+    if not point_list[0]:
+        point_list[1].append([new_point])
+        return
+
+    last_point_list = [path[-1] for path in point_list[0]]
+
+    distance_array = [get_dist(last_point, new_point) for last_point in last_point_list]
+
+
+    index = distance_array.index(min(distance_array))
+
+    if distance_array[index] < 40:
+        point_list[1].append(point_list[0][index])
+        point_list[1][-1].append(new_point)
+
+        # point_list[0].remove(point_list[0][index])
+        del point_list[0][index]
+
+    else:
+        index = len(point_list[1])
+        point_list[1].append([new_point])
+
 
 
 def load_images(img_names, model_size):
@@ -11,8 +42,6 @@ def load_images(img_names, model_size):
     Args:
         img_names: A list of images names.
         model_size: The input size of the model.
-        data_format: A format for the array returned
-            ('channels_first' or 'channels_last').
     Returns:
         A 4D NumPy array.
     """
@@ -41,7 +70,7 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size):
     """Draws detected boxes.
     Args:
         img_names: A list of input images names.
-        boxes_dict: A class-to-boxes dictionary.
+        boxes_dicts: A class-to-boxes dictionary.
         class_names: A class names list.
         model_size: The input size of the model.
     Returns:
@@ -85,7 +114,7 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size):
         rgb_img.save('./detections/detection_' + str(num + 1) + '.jpg')
 
 
-def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):
+def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size, point_list):
     """Draws detected boxes in a video frame.
     Args:
         frame: A video frame.
@@ -93,6 +122,7 @@ def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):
         boxes_dicts: A class-to-boxes dictionary.
         class_names: A class names list.
         model_size:The input size of the model.
+        point_list: array of paths taken by v
     Returns:
         None.
     """
@@ -100,19 +130,55 @@ def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):
     resize_factor = (frame_size[0] / model_size[1], frame_size[1] / model_size[0])
     colors = ((np.array(color_palette("hls", 80)) * 255)).astype(np.uint8)
     for cls in range(len(class_names)):
-        boxes = boxes_dict[cls]
-        color = colors[cls]
-        color = tuple([int(x) for x in color])
-        if np.size(boxes) != 0:
-            for box in boxes:
-                xy = box[:4]
-                xy = [int(xy[i] * resize_factor[i % 2]) for i in range(4)]
-                cv2.rectangle(frame, (xy[0], xy[1]), (xy[2], xy[3]), color[::-1], 2)
-                (test_width, text_height), baseline = cv2.getTextSize(class_names[cls],
-                                                                      cv2.FONT_HERSHEY_SIMPLEX,
-                                                                      0.75, 1)
-                cv2.rectangle(frame, (xy[0], xy[1]),
-                              (xy[0] + test_width, xy[1] - text_height - baseline),
-                              color[::-1], thickness=cv2.FILLED)
-                cv2.putText(frame, class_names[cls], (xy[0], xy[1] - baseline),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
+
+        if class_names[cls] in ['car', 'truck', 'bus']:
+            boxes = boxes_dict[cls]
+            color = colors[cls]
+            color = tuple([int(x) for x in color])
+            if np.size(boxes) != 0:
+                for box in boxes:
+
+                    xy = box[:4]
+                    xy = [int(xy[i] * resize_factor[i % 2]) for i in range(4)]
+                    point = ((xy[0] + xy[2])/2, (xy[1] + xy[3])/2)
+                    add_new_point(point_list, point)
+                    path = point_list[1][-1]
+                    cv2.rectangle(frame, (xy[0], xy[1]), (xy[2], xy[3]), color[::-1], 2)
+                    (test_width, text_height), baseline = cv2.getTextSize(class_names[cls],
+                                                                          cv2.FONT_HERSHEY_SIMPLEX,
+                                                                          0.75, 1)
+                    cv2.rectangle(frame, (xy[0], xy[1]),
+                                  (xy[0] + test_width, xy[1] - text_height - baseline),
+                                  color[::-1], thickness=cv2.FILLED)
+                    cv2.putText(frame, class_names[cls], (xy[0], xy[1] - baseline),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
+                    if len(path) > 1:
+                        for i in range(len(path)-1):
+                            cv2.line(frame,
+                                     (int(path[i][0]), int(path[i][1])),
+                                     (int(path[i+1][0]), int(path[i+1][1])),
+                                     color=(0, 255, 255),
+                                     thickness=3)
+
+    cv2.line(frame,
+             (920, 270),
+             (670, 110),
+             color=(0, 0, 0),
+             thickness=2)
+    cv2.line(frame,  # top
+             (360, 160),
+             (600, 100),
+             color=(0, 0, 0),
+             thickness=2)
+    cv2.line(frame,  # left
+             (500, 410),
+             (330, 170),
+             color=(0, 0, 0),
+             thickness=2)
+    cv2.line(frame,  # bottom
+             (780, 430),
+             (920, 330),
+             color=(0, 0, 0),
+             thickness=2)
+
+    point_list[0], point_list[1] = point_list[1] + point_list[0], []
