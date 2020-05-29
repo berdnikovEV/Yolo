@@ -1,4 +1,5 @@
 """Contains utility functions for Yolo v3 model."""
+import json
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -6,35 +7,36 @@ from seaborn import color_palette
 import cv2
 from typing import List
 
+CONFIG = json.load(open('config.json'))
 
 def get_dist(old_point, new_point):
     return ((old_point[0] - new_point[0])**2 + (old_point[1] - new_point[1])**2)**0.5
 
 
-def add_new_point(point_list:List[List], new_point):
+def add_new_point(point_list:List[List], new_point, vehicle_type):
     # point_list = [[old],[upd]]
     if not point_list[0]:
-        point_list[1].append([new_point])
-        return
+        point_list[1].append([vehicle_type, [None, None], new_point])
+        return vehicle_type
 
     last_point_list = [path[-1] for path in point_list[0]]
 
     distance_array = [get_dist(last_point, new_point) for last_point in last_point_list]
 
-
     index = distance_array.index(min(distance_array))
 
-    if distance_array[index] < 40:
+    if distance_array[index] < 50:
         point_list[1].append(point_list[0][index])
         point_list[1][-1].append(new_point)
 
         # point_list[0].remove(point_list[0][index])
         del point_list[0][index]
+        vehicle_type = point_list[1][-1][0]
 
     else:
-        index = len(point_list[1])
-        point_list[1].append([new_point])
+        point_list[1].append([vehicle_type, [None, None], new_point])
 
+    return vehicle_type
 
 
 def load_images(img_names, model_size):
@@ -130,55 +132,65 @@ def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size, point_li
     resize_factor = (frame_size[0] / model_size[1], frame_size[1] / model_size[0])
     colors = ((np.array(color_palette("hls", 80)) * 255)).astype(np.uint8)
     for cls in range(len(class_names)):
+        try:
+            if class_names[cls] in ['car', 'truck', 'bus']:
+                boxes = boxes_dict[cls]
+                color = colors[cls]
+                color = tuple([int(x) for x in color])
+                if np.size(boxes) != 0:
+                    for box in boxes:
+                        vehicle_type = class_names[cls]
+                        xy = box[:4]
+                        xy = [int(xy[i] * resize_factor[i % 2]) for i in range(4)]
+                        point = ((xy[0] + xy[2])/2, (xy[1] + xy[3])/2)
 
-        if class_names[cls] in ['car', 'truck', 'bus']:
-            boxes = boxes_dict[cls]
-            color = colors[cls]
-            color = tuple([int(x) for x in color])
-            if np.size(boxes) != 0:
-                for box in boxes:
+                        distance_list = [get_dist(point, x[-1]) for x in point_list[1]]
+                        if distance_list and min(distance_list) < 30:
+                            continue
 
-                    xy = box[:4]
-                    xy = [int(xy[i] * resize_factor[i % 2]) for i in range(4)]
-                    point = ((xy[0] + xy[2])/2, (xy[1] + xy[3])/2)
-                    add_new_point(point_list, point)
-                    path = point_list[1][-1]
-                    cv2.rectangle(frame, (xy[0], xy[1]), (xy[2], xy[3]), color[::-1], 2)
-                    (test_width, text_height), baseline = cv2.getTextSize(class_names[cls],
-                                                                          cv2.FONT_HERSHEY_SIMPLEX,
-                                                                          0.75, 1)
-                    cv2.rectangle(frame, (xy[0], xy[1]),
-                                  (xy[0] + test_width, xy[1] - text_height - baseline),
-                                  color[::-1], thickness=cv2.FILLED)
-                    cv2.putText(frame, class_names[cls], (xy[0], xy[1] - baseline),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
-                    if len(path) > 1:
-                        for i in range(len(path)-1):
-                            cv2.line(frame,
-                                     (int(path[i][0]), int(path[i][1])),
-                                     (int(path[i+1][0]), int(path[i+1][1])),
-                                     color=(0, 255, 255),
-                                     thickness=3)
+                        vehicle_type = add_new_point(point_list, point, vehicle_type)
+
+                        if point_list[1]:
+                            path = point_list[1][-1]
+                        else:
+                            continue
+
+                        cv2.rectangle(frame, (xy[0], xy[1]), (xy[2], xy[3]), color[::-1], 2)
+                        (test_width, text_height), baseline = cv2.getTextSize(class_names[cls],
+                                                                              cv2.FONT_HERSHEY_SIMPLEX,
+                                                                              0.75, 1)
+                        cv2.rectangle(frame, (xy[0], xy[1]),
+                                      (xy[0] + test_width, xy[1] - text_height - baseline),
+                                      color[::-1], thickness=cv2.FILLED)
+                        cv2.putText(frame, vehicle_type, (xy[0], xy[1] - baseline),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
+                        if len(path) > 1:
+                            for i in range(2, len(path)-1):
+                                if path[i][0] is not None:
+                                    cv2.line(frame,
+                                             (int(path[i][0]), int(path[i][1])),
+                                             (int(path[i+1][0]), int(path[i+1][1])),
+                                             color=(0, 255, 255),
+                                             thickness=3)
+        except Exception as e:
+            print(str(e))
+    borders = CONFIG['borders']
+
+    try:
+        for border_coordinate_set in borders:
+            border_coordinate_set = tuple(border_coordinate_set)
+            cv2.line(frame,
+                     border_coordinate_set[0:2],
+                     border_coordinate_set[2:4],
+                     color=(0, 0, 0),
+                     thickness=2)
+    except Exception as fuck:
+        print(str(fuck))
 
     cv2.line(frame,
-             (920, 270),
-             (670, 110),
-             color=(0, 0, 0),
-             thickness=2)
-    cv2.line(frame,  # top
-             (360, 160),
-             (600, 100),
-             color=(0, 0, 0),
-             thickness=2)
-    cv2.line(frame,  # left
-             (500, 410),
-             (330, 170),
-             color=(0, 0, 0),
-             thickness=2)
-    cv2.line(frame,  # bottom
-             (780, 430),
-             (920, 330),
+             border_coordinate_set[0:2],
+             border_coordinate_set[2:4],
              color=(0, 0, 0),
              thickness=2)
 
-    point_list[0], point_list[1] = point_list[1] + point_list[0], []
+    point_list[0], point_list[1] = point_list[1] + [x+[[999999999, 999999999]] for x in point_list[0]], []
