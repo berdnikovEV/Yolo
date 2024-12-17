@@ -18,5 +18,5 @@ python load_weights.py
 ```
 python detect.py data/video/hrodna.mp4
 ```
-hshhs
+hshhs РЫРРЫРЫРЫРРЫ
 
